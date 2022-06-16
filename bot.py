@@ -1,5 +1,7 @@
 import hikari
 import lightbulb
+from nba_champions_dict import *
+
 
 bot = lightbulb.BotApp(token='OTg2MDA3NDIyOTc4MTEzNTQ2.Gb8uAu.MAJNnhVIMxPAYxSHV3jvRt7Z1NGOKMDuN4dNPs', prefix="!")
 
@@ -14,11 +16,11 @@ async def on_started(event):
 # Define the command type(s) that this command implements
 @lightbulb.implements(lightbulb.PrefixCommand)
 async def champions(ctx):   
-    print("working!")
-    print(dir(ctx.event.content))
+    #print(dir(ctx.event.content))
     try:
         year = ctx.event.content.split()[1]
-        await ctx.respond(year)
+        chosen_year = pick_championship_year(int(year))
+        await ctx.respond(chosen_year)
     except IndexError:
         await ctx.respond("You must enter a year!")
 bot.run()
