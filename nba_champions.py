@@ -1,4 +1,3 @@
-
 from bs4 import BeautifulSoup
 import requests
 
@@ -27,6 +26,7 @@ def champions_yby():
             score = tag.find('div', class_ = "rd-100 margen-r5").string
             yearly_lst.insert(2,score)
             lst.append(yearly_lst)
+            
     
     return lst  # returning list of lists comprised of [year, winner, score, loser, Finals MVP, Season MVP]
 
