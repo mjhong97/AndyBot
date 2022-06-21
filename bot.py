@@ -3,11 +3,18 @@ import lightbulb
 from nba_champions_dict import *
 from real_time_prices import *
 from dotenv import load_dotenv
+import os
+import pymongo
 
 load_dotenv()
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
+MONGO_HOST = os.environ.get("MONGO_HOST")
+MONGO_USER = os.environ.get("MONGO_USER")
+MONGO_PASSWORD = os.environ.get("MONGO_PASSWORD")
+MONGO_URL= f"mongodb+srv://{MONGO_USER}:{MONGO_PASSWORD}@{MONGO_HOST}"
 
 bot = lightbulb.BotApp(token = DISCORD_TOKEN, prefix="!")
+client = pymongo.MongoClient(MONGO_URL)
 
 @bot.listen(hikari.StartedEvent)
 async def on_started(event):
