@@ -1,4 +1,5 @@
 from asyncio import base_events
+from multiprocessing.sharedctypes import Value
 import hikari
 import lightbulb
 from nba_champions_dict import *
@@ -82,18 +83,24 @@ async def create_portfolio(ctx):
         await ctx.respond(display_account(discord_id, discord_username))
 
 
-
-
+def portfolio_value(portfolio):
+    for company_symbol, number_of_shares in portfolio.items():
+        url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
+        stock_price, market_price, market_change = real_time_price(url)
+        embed = embed = hikari.Embed(
+            title= "Account Overview",
+            description= "Current Prices of Portfolio"
+            )
+        embed.add_field(
+            name = company_symbol,
+            value = number_of_shares * stock_price
+        )
+        return embed
 
 def display_account(discord_id, discord_username):                           ### View add sell
     query = collections.find_one({"discord_id": discord_id})
     budget_value = query["budget"]
     formatted_budget = "{:,.2f}".format(budget_value)
-
-    value= query["portfolio"]
-    if not value:
-        value = "Portfolio is empty"
-
     embed = hikari.Embed(
             title= f"{discord_username}'s Account",
             description= "Account Status"
@@ -102,10 +109,23 @@ def display_account(discord_id, discord_username):                           ###
         name="budget",
         value= "$" + formatted_budget
     )    
-    embed.add_field(
-        name="Portfolio",
-        value = value
-    )   
+
+    value= query["portfolio"]
+    if not value:
+        embed.add_field(
+            name="Portfolio",
+            value = "Portfolio is empty"
+        )   
+
+    else:
+        for company_symbol, number_of_shares in value.items():
+            url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
+            stock_price = float(just_prices(url)) * number_of_shares
+            formatted_price = "${:,.2f}".format(stock_price)
+            embed.add_field(
+                name = company_symbol,
+                value = f"Number of shares: {int(number_of_shares)}\n" + formatted_price 
+            )
     return embed
 
 # add buy, sell, view to group command
