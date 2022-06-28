@@ -31,6 +31,14 @@ async def on_started(event):
 
 
 @bot.command
+@lightbulb.command("view", "view portfolio")
+@lightbulb.implements(lightbulb.PrefixCommand)
+async def buy_stock(ctx):
+    discord_id = ctx.user.id
+    discord_username = ctx.user.username
+    await ctx.respond(display_account(discord_id, discord_username))
+
+@bot.command
 @lightbulb.command("deleteportfolio", "delete portfolio")
 @lightbulb.implements(lightbulb.PrefixCommand)
 async def del_portfolio(ctx):
@@ -83,19 +91,6 @@ async def create_portfolio(ctx):
         await ctx.respond(display_account(discord_id, discord_username))
 
 
-def portfolio_value(portfolio):
-    for company_symbol, number_of_shares in portfolio.items():
-        url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
-        stock_price, market_price, market_change = real_time_price(url)
-        embed = embed = hikari.Embed(
-            title= "Account Overview",
-            description= "Current Prices of Portfolio"
-            )
-        embed.add_field(
-            name = company_symbol,
-            value = number_of_shares * stock_price
-        )
-        return embed
 
 def display_account(discord_id, discord_username):                           ### View add sell
     query = collections.find_one({"discord_id": discord_id})
