@@ -73,8 +73,8 @@ async def create_portfolio(ctx):
         new_post = {
             "discord_id" : ctx.user.id,
             "name" : ctx.user.username,
-            "budget": 100000,
-            "portfolio" : []
+            "budget": 100000.00,
+            "portfolio" : {}
         }
         collections.insert_one(new_post)
         
@@ -87,24 +87,140 @@ async def create_portfolio(ctx):
 
 def display_account(discord_id, discord_username):                           ### View add sell
     query = collections.find_one({"discord_id": discord_id})
+    budget_value = query["budget"]
+    formatted_budget = "{:,.2f}".format(budget_value)
+
     value= query["portfolio"]
     if not value:
-        value = "Portfolio is empty"  
+        value = "Portfolio is empty"
+
     embed = hikari.Embed(
             title= f"{discord_username}'s Account",
             description= "Account Status"
         )
     embed.add_field(
         name="budget",
-        value= query["budget"]
+        value= "$" + formatted_budget
     )    
     embed.add_field(
         name="Portfolio",
-        value = value 
+        value = value
     )   
     return embed
 
+# add buy, sell, view to group command
+# buy and sell can have option commands
+@bot.command
+@lightbulb.command("buy", "Buy shares of stock if within budget")
+@lightbulb.implements(lightbulb.PrefixCommand)
+async def buy_stock(ctx):
+    company_symbol = ctx.event.content.split()[1].upper()   # Ex input) !buy AMZN 3
+    shares = float(ctx.event.content.split()[2])
+    url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
+    stock_price, market_price, market_change = real_time_price(url)
+    
+    embed = hikari.Embed(title = company_symbol)
+    embed.add_field("Stock Price", value=stock_price)
+    embed.add_field("Regular Market Price", value=market_price, inline=True)
+    embed.add_field("Regular Market Change", value=market_change, inline=True)
+    await ctx.respond(embed)
+    discord_id = ctx.user.id
+    discord_username = ctx.user.username
 
+    await ctx.respond("'Send me a 👍 to confirm'")
+    response = await ctx.bot.wait_for(hikari.MessageEvent, 10000)
+
+    if str(response.content) == '👍' and response.author_id == discord_id:
+        query = collections.find_one({"discord_id": discord_id})
+        print(query)
+        total = shares * float(stock_price)
+        new_budget = query["budget"] - total
+        curr_portfolio = query["portfolio"]
+        print(curr_portfolio)
+        print(type(curr_portfolio))
+        if query == None:
+            await ctx.respond("You don't have an existing portfolio!")
+        elif query["budget"] < total:
+            await ctx.respond("You don't have enough money..")
+        else:
+            updated_portfolio = buy_and_update_portfolio(curr_portfolio, company_symbol, shares)
+            to_update = {
+                "budget" : new_budget,
+                "portfolio" : updated_portfolio
+            }
+            collections.update_one({"discord_id" : discord_id}, {"$set":to_update})
+            await ctx.respond(display_account(discord_id, discord_username))
+         
+# Timer for the buy function - we should implement
+    # try:
+    #     response = await ctx.bot.wait_for(hikari.MessageEvent, 10000)
+    #     if str(response.content) == '👍':
+    # except:
+    #     await ctx.respond("You have timed out. Request to buy again!")
+
+
+def buy_and_update_portfolio(curr_portfolio, ticker, shares):
+    # curr_portfolio is a dict where ticker is key and shares is value
+    # if ticker is in dict then increment shares
+    # else we add to portfolio
+    if ticker in curr_portfolio:
+        curr_portfolio[ticker] += shares
+    else:
+        curr_portfolio[ticker] = shares
+    
+    return curr_portfolio
+
+
+@bot.command
+@lightbulb.command("sell", "Sell shares of stock if within budget")
+@lightbulb.implements(lightbulb.PrefixCommand)
+async def sell_stock(ctx):
+    company_symbol = ctx.event.content.split()[1].upper()   # Ex input) !buy AMZN 3
+    shares = float(ctx.event.content.split()[2])
+    url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
+    stock_price, market_price, market_change = real_time_price(url)
+    
+    embed = hikari.Embed(title = company_symbol)
+    embed.add_field("Stock Price", value=stock_price)
+    embed.add_field("Regular Market Price", value=market_price, inline=True)
+    embed.add_field("Regular Market Change", value=market_change, inline=True)
+    await ctx.respond(embed)
+
+    discord_id = ctx.user.id
+    discord_username = ctx.user.username
+
+    await ctx.respond("'Send me a 👍 to confirm'")
+    response = await ctx.bot.wait_for(hikari.MessageEvent, 10000)
+
+    if str(response.content) == '👍' and response.author_id == discord_id:
+        query = collections.find_one({"discord_id": discord_id})
+    
+        total = shares * float(stock_price)
+        new_budget = query["budget"] + total
+        curr_portfolio = query["portfolio"]
+
+        if query == None:
+            await ctx.respond("You don't have an existing portfolio!")
+        elif shares > curr_portfolio[company_symbol]:
+            await ctx.respond("Not enough shares to sell")
+        else:
+            updated_portfolio = sell_and_update_portfolio(curr_portfolio, company_symbol, shares)
+            to_update = {
+                "budget" : new_budget,
+                "portfolio" : updated_portfolio
+            }
+            collections.update_one({"discord_id" : discord_id}, {"$set":to_update})
+            await ctx.respond(display_account(discord_id, discord_username))
+
+
+def sell_and_update_portfolio(curr_portfolio, ticker, shares):
+    # curr_portfolio is a dict where ticker is key and shares is value
+    # if ticker is in dict then increment shares
+    # else we add to portfolio
+    if ticker in curr_portfolio:
+            curr_portfolio[ticker] -= shares
+    
+    return curr_portfolio
 
 
 @bot.command
@@ -115,8 +231,12 @@ async def champions(ctx):
     try:
         company_symbol = ctx.event.content.split()[1].upper()   # Ex input) !prices AMZN
         url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
-        chosen_company = real_time_price(url)
-        await ctx.respond(chosen_company)
+        stock_price, market_price, market_change = real_time_price(url)
+        embed = hikari.Embed(title = company_symbol)
+        embed.add_field("Stock Price", value=stock_price)
+        embed.add_field("Regular Market Price", value=market_price, inline=True)
+        embed.add_field("Regular Market Change", value=market_change, inline=True)
+        await ctx.respond(embed)
     except IndexError:
         await ctx.respond("Please enter a valid company symbol!")
 
