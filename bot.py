@@ -1,5 +1,7 @@
 from asyncio import base_events
 from multiprocessing.sharedctypes import Value
+import posixpath
+from turtle import title
 import hikari
 import lightbulb
 from nba_champions_dict import *
@@ -30,10 +32,62 @@ async def on_started(event):
     print('Bot has started!')
 
 
+# @bot.listen()
+# async def join(event: hikari.events.member_events.MemberCreateEvent) -> None:
+#     channel_id = 986780565049069668
+#     await event.app.rest.create_message(channel_id,f"welcome {event.member.mention}!")
+    
+
+@bot.command
+@lightbulb.command("leaderboard", "view leaderboard")
+@lightbulb.implements(lightbulb.PrefixCommand)
+async def view_portfolio(ctx):
+    query = collections.find({})
+    print(query)
+    embed = hikari.Embed(
+            title= "Leader Board",
+            description= "Portfolio value and Total Asset \n The Rankings are based on Total Assets"
+        )
+    leader_board = []
+    total = 0
+    for post in query:
+        tickers = set(post["portfolio"].items())
+        print(len(tickers))
+        for each_tickers in tickers:
+            ticker, shares = each_tickers
+            print(ticker, shares)
+            url = "https://finance.yahoo.com/quote/" + ticker + "?p=" + ticker + "&.tsrc=fin-srch"
+            price = just_prices(url)
+            total += float(price) * shares
+            total_assets = post["budget"] + total
+
+        each_user_account = {
+            "Name" : post["name"],
+            "Portfolio Value" : total,
+            "Total Assets" : total_assets
+        }
+        leader_board.append(each_user_account)
+    sorted_leader_board = sorted(leader_board, key=lambda d: d['Total Assets'], reverse = True)
+    print(sorted_leader_board)
+    count = 0
+    for member in sorted_leader_board:
+        count += 1
+        portfolio_value = "${:,.2f}".format(member["Portfolio Value"])
+        total_assets = "${:,.2f}".format(member["Total Assets"])
+        embed.add_field(
+            name = member["Name"],
+            value = "Rank: {} \nPortfolio value : {}  \nTotal Assets: {}".format(count, portfolio_value, total_assets)     
+        )
+    await ctx.respond(embed)
+          
+    
+    
+
+
 @bot.command
 @lightbulb.command("view", "view portfolio")
 @lightbulb.implements(lightbulb.PrefixCommand)
-async def buy_stock(ctx):
+async def view_portfolio(ctx):
     discord_id = ctx.user.id
     discord_username = ctx.user.username
     await ctx.respond(display_account(discord_id, discord_username))
@@ -92,10 +146,12 @@ async def create_portfolio(ctx):
 
 
 
-def display_account(discord_id, discord_username):                           ### View add sell
+def display_account(discord_id, discord_username):                           ### helper function to  view add sell
     query = collections.find_one({"discord_id": discord_id})
     budget_value = query["budget"]
     formatted_budget = "{:,.2f}".format(budget_value)
+    total_portfolio_value = 0
+
     embed = hikari.Embed(
             title= f"{discord_username}'s Account",
             description= "Account Status"
@@ -116,24 +172,30 @@ def display_account(discord_id, discord_username):                           ###
         for company_symbol, number_of_shares in value.items():
             url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
             stock_price = float(just_prices(url)) * number_of_shares
+            total_portfolio_value += stock_price
             formatted_price = "${:,.2f}".format(stock_price)
             embed.add_field(
                 name = company_symbol,
                 value = f"Number of shares: {int(number_of_shares)}\n" + formatted_price 
             )
+            embed.edit_field(1, "Portfolio Value", "${:,.2f}".format(total_portfolio_value))
     return embed
 
-# add buy, sell, view to group command
-# buy and sell can have option commands
+
 @bot.command
 @lightbulb.command("buy", "Buy shares of stock if within budget")
 @lightbulb.implements(lightbulb.PrefixCommand)
 async def buy_stock(ctx):
-    company_symbol = ctx.event.content.split()[1].upper()   # Ex input) !buy AMZN 3
-    shares = float(ctx.event.content.split()[2])
-    url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
-    stock_price, market_price, market_change = real_time_price(url)
-    
+    try:
+        company_symbol = ctx.event.content.split()[1].upper()   # Ex input) !buy AMZN 3
+        shares = float(ctx.event.content.split()[2])
+    except IndexError:
+         await ctx.respond("Please follow example: !buy AMZN 3 ")
+    try:
+        url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
+        stock_price, market_price, market_change = real_time_price(url)
+    except ValueError:
+        await ctx.respond("That is not a valid ticker symbol.")
     embed = hikari.Embed(title = company_symbol)
     embed.add_field("Stock Price", value=stock_price)
     embed.add_field("Regular Market Price", value=market_price, inline=True)
@@ -143,35 +205,31 @@ async def buy_stock(ctx):
     discord_username = ctx.user.username
 
     await ctx.respond("'Send me a 👍 to confirm'")
-    response = await ctx.bot.wait_for(hikari.MessageEvent, 10000)
+    try :
+        response = await ctx.bot.wait_for(hikari.MessageEvent, 10000)
+        print(f"Buying {shares} of {company_symbol}")
 
-    if str(response.content) == '👍' and response.author_id == discord_id:
-        query = collections.find_one({"discord_id": discord_id})
-        print(query)
-        total = shares * float(stock_price)
-        new_budget = query["budget"] - total
-        curr_portfolio = query["portfolio"]
-        print(curr_portfolio)
-        print(type(curr_portfolio))
-        if query == None:
-            await ctx.respond("You don't have an existing portfolio!")
-        elif query["budget"] < total:
-            await ctx.respond("You don't have enough money..")
-        else:
-            updated_portfolio = buy_and_update_portfolio(curr_portfolio, company_symbol, shares)
-            to_update = {
-                "budget" : new_budget,
-                "portfolio" : updated_portfolio
-            }
-            collections.update_one({"discord_id" : discord_id}, {"$set":to_update})
-            await ctx.respond(display_account(discord_id, discord_username))
-         
-# Timer for the buy function - we should implement
-    # try:
-    #     response = await ctx.bot.wait_for(hikari.MessageEvent, 10000)
-    #     if str(response.content) == '👍':
-    # except:
-    #     await ctx.respond("You have timed out. Request to buy again!")
+        if str(response.content) == '👍' and response.author_id == discord_id:
+            query = collections.find_one({"discord_id": discord_id})
+            total = shares * float(stock_price)
+            new_budget = query["budget"] - total
+            curr_portfolio = query["portfolio"]
+
+            if query == None:
+                await ctx.respond("You don't have an existing portfolio!")
+            elif query["budget"] < total:
+                await ctx.respond("You don't have enough money..")
+            else:
+                updated_portfolio = buy_and_update_portfolio(curr_portfolio, company_symbol, shares)
+                to_update = {
+                    "budget" : new_budget,
+                    "portfolio" : updated_portfolio
+                }
+                collections.update_one({"discord_id" : discord_id}, {"$set":to_update})
+                await ctx.respond(display_account(discord_id, discord_username))
+                print(f"Bought {shares} of {company_symbol}")
+    except:
+        await ctx.respond("You have timed out. Request to buy again!")
 
 
 def buy_and_update_portfolio(curr_portfolio, ticker, shares):
@@ -190,11 +248,17 @@ def buy_and_update_portfolio(curr_portfolio, ticker, shares):
 @lightbulb.command("sell", "Sell shares of stock if within budget")
 @lightbulb.implements(lightbulb.PrefixCommand)
 async def sell_stock(ctx):
-    company_symbol = ctx.event.content.split()[1].upper()   # Ex input) !buy AMZN 3
-    shares = float(ctx.event.content.split()[2])
-    url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
-    stock_price, market_price, market_change = real_time_price(url)
-    
+    try:
+        company_symbol = ctx.event.content.split()[1].upper()   # Ex input) !buy AMZN 3
+        shares = float(ctx.event.content.split()[2])
+    except IndexError:
+         await ctx.respond("Please follow example: !sell AMZN 3 ")
+
+    try:
+        url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
+        stock_price, market_price, market_change = real_time_price(url)
+    except ValueError:
+        await ctx.respond("That is not a valid ticker symbol.")
     embed = hikari.Embed(title = company_symbol)
     embed.add_field("Stock Price", value=stock_price)
     embed.add_field("Regular Market Price", value=market_price, inline=True)
@@ -205,27 +269,33 @@ async def sell_stock(ctx):
     discord_username = ctx.user.username
 
     await ctx.respond("'Send me a 👍 to confirm'")
-    response = await ctx.bot.wait_for(hikari.MessageEvent, 10000)
+    try:
+        response = await ctx.bot.wait_for(hikari.MessageEvent, 10000)
 
-    if str(response.content) == '👍' and response.author_id == discord_id:
-        query = collections.find_one({"discord_id": discord_id})
-    
-        total = shares * float(stock_price)
-        new_budget = query["budget"] + total
-        curr_portfolio = query["portfolio"]
+        print(f"Selling {shares} of {company_symbol}")
 
-        if query == None:
-            await ctx.respond("You don't have an existing portfolio!")
-        elif shares > curr_portfolio[company_symbol]:
-            await ctx.respond("Not enough shares to sell")
-        else:
-            updated_portfolio = sell_and_update_portfolio(curr_portfolio, company_symbol, shares)
-            to_update = {
-                "budget" : new_budget,
-                "portfolio" : updated_portfolio
-            }
-            collections.update_one({"discord_id" : discord_id}, {"$set":to_update})
-            await ctx.respond(display_account(discord_id, discord_username))
+        if str(response.content) == '👍' and response.author_id == discord_id:
+            query = collections.find_one({"discord_id": discord_id})
+        
+            total = shares * float(stock_price)
+            new_budget = query["budget"] + total
+            curr_portfolio = query["portfolio"]
+
+            if query == None:
+                await ctx.respond("You don't have an existing portfolio!")
+            elif shares > curr_portfolio[company_symbol]:
+                await ctx.respond("Not enough shares to sell")
+            else:
+                updated_portfolio = sell_and_update_portfolio(curr_portfolio, company_symbol, shares)
+                to_update = {
+                    "budget" : new_budget,
+                    "portfolio" : updated_portfolio
+                }
+                collections.update_one({"discord_id" : discord_id}, {"$set":to_update})
+                await ctx.respond(display_account(discord_id, discord_username))
+                print(f"Sold {shares} of {company_symbol}")
+    except:
+        await ctx.respond("You have timed out. Request to buy again!")
 
 
 def sell_and_update_portfolio(curr_portfolio, ticker, shares):
