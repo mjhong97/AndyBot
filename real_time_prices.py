@@ -13,3 +13,9 @@ def real_time_price(url):
 
     return stock_price.get_text(), qsp_price, qsp_price_change
     # return f'Price is {stock_price.get_text()} and the regular Market Price / regular Market Change is {qsp_price} / {qsp_price_change}' 
+
+def just_prices(url):
+    result = requests.get(url)
+    soup = BeautifulSoup(result.text, 'html.parser')
+    stock_price = soup.find('fin-streamer', class_="Fw(b) Fz(36px) Mb(-4px) D(ib)")
+    return stock_price.get_text()
