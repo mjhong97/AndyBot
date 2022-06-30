@@ -9,7 +9,7 @@ from real_time_prices import *
 from dotenv import load_dotenv
 import os
 import pymongo
-
+import asyncio
 
 load_dotenv()
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -36,7 +36,22 @@ async def on_started(event):
 # async def join(event: hikari.events.member_events.MemberCreateEvent) -> None:
 #     channel_id = 986780565049069668
 #     await event.app.rest.create_message(channel_id,f"welcome {event.member.mention}!")
-    
+
+
+@bot.command
+@lightbulb.command("usage", "view usage")
+@lightbulb.implements(lightbulb.PrefixCommand)
+async def view_portfolio(ctx):   
+    await ctx.respond(
+        "!usage: will show you usage for all the commands" + "\n"
+        "!createportfolio: you will first need to setup your portfolio using this command" + "\n"
+        "!view: will show you your up-to-date portfolio" + "\n"
+        "!prices: Example usage > '!prices amzn' to view current market price/changes of amzn" + "\n"
+        "!buy: Example usage > '!buy amzn 3' to buy 3 shares of amzn" + "\n"
+        "!sell: Example usage > '!sell amzn 3' to sell 3 shares of amzn" + "\n"
+        "!leaderboard: will show all the members of the guild by their rank" + "\n"
+        "!deleteportfolio: will ask to confirm if you want to delete your account" 
+    )
 
 @bot.command
 @lightbulb.command("leaderboard", "view leaderboard")
@@ -167,8 +182,12 @@ def display_account(discord_id, discord_username):                           ###
             name="Portfolio",
             value = "Portfolio is empty"
         )   
-
+    
     else:
+        embed.add_field(
+            name="Portfolio",
+            value="To be replaced"
+        )
         for company_symbol, number_of_shares in value.items():
             url = "https://finance.yahoo.com/quote/" + company_symbol + "?p=" + company_symbol + "&.tsrc=fin-srch"
             stock_price = float(just_prices(url)) * number_of_shares
@@ -203,34 +222,46 @@ async def buy_stock(ctx):
     await ctx.respond(embed)
     discord_id = ctx.user.id
     discord_username = ctx.user.username
+    
+    message = await ctx.respond("React to this message with ✅ or ❌")
+    
+    await message._message.add_reaction('✅')
+    await message._message.add_reaction('❌')
+    
+    def check(reaction):
+        return str(reaction.emoji_name) in ['✅', '❌'] and not reaction.member.is_bot and discord_id == reaction.user_id 
+    try:
+        reaction = await bot.wait_for(hikari.events.ReactionAddEvent, 60, check)
 
-    await ctx.respond("'Send me a 👍 to confirm'")
-    try :
-        response = await ctx.bot.wait_for(hikari.MessageEvent, 10000)
-        print(f"Buying {shares} of {company_symbol}")
+    except asyncio.TimeoutError:
+        await ctx.respond("No one reacted within 60 seconds")
 
-        if str(response.content) == '👍' and response.author_id == discord_id:
-            query = collections.find_one({"discord_id": discord_id})
-            total = shares * float(stock_price)
-            new_budget = query["budget"] - total
-            curr_portfolio = query["portfolio"]
+    else:
+        if reaction.user_id == discord_id:
+            if str(reaction.emoji_name) == '✅':
+                await ctx.respond(f"You confirmed your purchase of {shares} shares of {company_symbol} ✅")
+                query = collections.find_one({"discord_id": discord_id})
+                total = shares * float(stock_price)
+                new_budget = query["budget"] - total
+                curr_portfolio = query["portfolio"]
 
-            if query == None:
-                await ctx.respond("You don't have an existing portfolio!")
-            elif query["budget"] < total:
-                await ctx.respond("You don't have enough money..")
-            else:
-                updated_portfolio = buy_and_update_portfolio(curr_portfolio, company_symbol, shares)
-                to_update = {
-                    "budget" : new_budget,
-                    "portfolio" : updated_portfolio
-                }
-                collections.update_one({"discord_id" : discord_id}, {"$set":to_update})
-                await ctx.respond(display_account(discord_id, discord_username))
-                print(f"Bought {shares} of {company_symbol}")
-    except:
-        await ctx.respond("You have timed out. Request to buy again!")
+                if query == None:
+                    await ctx.respond("You don't have an existing portfolio!")
+                elif query["budget"] < total:
+                    await ctx.respond("You don't have enough money..")
+                else:
+                    updated_portfolio = buy_and_update_portfolio(curr_portfolio, company_symbol, shares)
+                    to_update = {
+                        "budget" : new_budget,
+                        "portfolio" : updated_portfolio
+                    }
+                    collections.update_one({"discord_id" : discord_id}, {"$set":to_update})
+                    await ctx.respond(display_account(discord_id, discord_username))
+                    print(f"Bought {shares} of {company_symbol}")
+            if str(reaction.emoji_name) == '❌':
+                await ctx.respond("You cancelled your purchase ❌")
 
+    
 
 def buy_and_update_portfolio(curr_portfolio, ticker, shares):
     # curr_portfolio is a dict where ticker is key and shares is value
@@ -268,34 +299,43 @@ async def sell_stock(ctx):
     discord_id = ctx.user.id
     discord_username = ctx.user.username
 
-    await ctx.respond("'Send me a 👍 to confirm'")
+    message = await ctx.respond("React to this message with ✅ or ❌")
+    
+    await message._message.add_reaction('✅')
+    await message._message.add_reaction('❌')
+    
+    def check(reaction):
+        return str(reaction.emoji_name) in ['✅', '❌'] and not reaction.member.is_bot and discord_id == reaction.user_id 
     try:
-        response = await ctx.bot.wait_for(hikari.MessageEvent, 10000)
+        reaction = await bot.wait_for(hikari.events.ReactionAddEvent, 60, check)
 
-        print(f"Selling {shares} of {company_symbol}")
+    except asyncio.TimeoutError:
+        await ctx.respond("No one reacted within 60 seconds")
 
-        if str(response.content) == '👍' and response.author_id == discord_id:
-            query = collections.find_one({"discord_id": discord_id})
-        
-            total = shares * float(stock_price)
-            new_budget = query["budget"] + total
-            curr_portfolio = query["portfolio"]
+    else:
+        if reaction.user_id == discord_id:
+            if str(reaction.emoji_name) == '✅':
+                await ctx.respond(f"You confirmed your sale of {shares} shares of {company_symbol} ✅")
+                query = collections.find_one({"discord_id": discord_id})
+                total = shares * float(stock_price)
+                new_budget = query["budget"] + total
+                curr_portfolio = query["portfolio"]
 
-            if query == None:
-                await ctx.respond("You don't have an existing portfolio!")
-            elif shares > curr_portfolio[company_symbol]:
-                await ctx.respond("Not enough shares to sell")
-            else:
-                updated_portfolio = sell_and_update_portfolio(curr_portfolio, company_symbol, shares)
-                to_update = {
-                    "budget" : new_budget,
-                    "portfolio" : updated_portfolio
-                }
-                collections.update_one({"discord_id" : discord_id}, {"$set":to_update})
-                await ctx.respond(display_account(discord_id, discord_username))
-                print(f"Sold {shares} of {company_symbol}")
-    except:
-        await ctx.respond("You have timed out. Request to buy again!")
+                if query == None:
+                    await ctx.respond("You don't have an existing portfolio!")
+                elif shares > curr_portfolio[company_symbol]:
+                    await ctx.respond("Not enough shares to sell")
+                else:
+                    updated_portfolio = sell_and_update_portfolio(curr_portfolio, company_symbol, shares)
+                    to_update = {
+                        "budget" : new_budget,
+                        "portfolio" : updated_portfolio
+                    }
+                    collections.update_one({"discord_id" : discord_id}, {"$set":to_update})
+                    await ctx.respond(display_account(discord_id, discord_username))
+                    print(f"Sold {shares} of {company_symbol}")
+            if str(reaction.emoji_name) == '❌':
+                await ctx.respond("You cancelled your sale ❌")
 
 
 def sell_and_update_portfolio(curr_portfolio, ticker, shares):
